@@ -78,22 +78,22 @@
  /*
   * 0251: what the chip did with a play, 5 and 25 ms after GO: SYSST (01) / SYSINT (02), bits (aw8697_reg.h)
   * 7 BSTERR boost error, 6 OV, 5 UVL under-voltage, 4 FF_AE, 3 FF_AF, 2 OCD over-current, 1 OT over-temperature,
-@@ -521,9 +551,6 @@
+@@ -521,8 +551,6 @@
   * inspected and set up again without catching the boot log. Called without hp.lock held. 0 = configured.
   */
- static int
--hap_configure_locked(bool full, bool click);
+-static int hap_configure_locked(bool full, bool click);
 -
--static int
+ static int
  hap_configure(bool full, bool click)
  {
  	lck_mtx_lock(hp.lock);                                   /* 0252: the reset pulse too (vibrator thread vs sysctl) */
-@@ -629,11 +656,9 @@
+@@ -629,12 +656,9 @@
  #define HI_SLOT_MS              100
  #define HI_SLOTS                (HI_WINDOW_MS / HI_SLOT_MS + 1)
  #define HI_GAIN_TOP             0x80    /* Android's strongest (aw8697_haptic_effect_strength) */
 -#define HI_TOLD                 24
 -#define R_DATDBG                0x39
+-
  static volatile uint64_t hi_heard_us, hi_quiet_us, hi_onset_us;
  static volatile uint32_t hi_peak;
 -static unsigned hi_taps, hi_loops, hi_capped;
@@ -163,10 +163,10 @@
  			if (active && hi_onset_us != tap_onset && now - hi_onset_us >= HI_SETTLE_US) {
  				uint64_t began = hi_onset_us;
  				tap_onset = began;
-@@ -773,9 +816,13 @@
+@@ -773,7 +816,13 @@
  				since = now;
- 				oneshot_at = now;
- 				health_at = now;
++				oneshot_at = now;
++				health_at = now;
 -				if (++hi_taps + hi_loops <= HI_TOLD) {
 +				++hi_taps;
 +				hi_last_peak = peak;
@@ -178,8 +178,8 @@
  				}
  				break;
  			}
-@@ -792,9 +839,13 @@
- 					oneshot_at = 0;
+@@ -792,8 +839,13 @@
++					oneshot_at = 0;
  					playing_gain = gain ? gain : 1;
  					hi_peak = 0;
 -					if (hi_taps + ++hi_loops <= HI_TOLD) {

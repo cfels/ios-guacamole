@@ -63,7 +63,7 @@ Requirements: unlocked bootloader, Android on slot A (`boot_a`), the iOS root on
 `ios`, TWRP for log pulls and partition work.
 
 1. Build the shim and an iOS boot image as usual (`docs/guacamole.md`, Workflow): `BOARD=guacamole
-   shim/build.sh` builds the selector into `shim/out/Image`; `tools/guac-mkboot.sh` /
+   DUAL_BOOT=1 shim/build.sh` builds the selector into `shim/out/Image`; `tools/guac-mkboot.sh` /
    `tools/mkguacboot.py` wrap it with the payload.
 2. Test tethered, nothing flashed: `fastboot boot IMAGE` with the slider at the top (Android) and at
    the bottom (iOS).
@@ -105,5 +105,5 @@ checks, keystore), the shim could pass ABL's verity line for slot A instead.
 - `shim/ufs.c`: `ufs_open`, `ufs_find`, `ufs_find_guid`, `ufs_read` (read-only, any LUN).
 - `shim/fdt.c`: `fdt_chosen_prop`, `fdt_rebuild_chosen`.
 - `shim/start.S`: `linux_tramp`.
-- `shim/build.sh`: builds them in, adds `-fno-jump-tables` (the shim runs unrelocated, so no tables of
+- `shim/build.sh`: builds them in when `DUAL_BOOT=1`, adds `-fno-jump-tables` (the shim runs unrelocated, so no tables of
   absolute addresses).

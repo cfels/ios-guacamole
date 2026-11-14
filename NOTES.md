@@ -1,3 +1,46 @@
+# Active WSL handoff — standalone userdata and full fork integration (2026-11-15)
+
+- User reported the earlier Corey OpenGL boot works. Requested a clean full userdata image,
+  followed by Corey's 90 Hz, Metal, Wi-Fi, Bluetooth, wallpapers, apps and other documented
+  features. The requested boot image starts iOS regardless of Alert Slider position.
+- Built a 60 Hz fallback in out/full-userdata/release. It starts from the clean 20H392
+  Apple IPSW-based HFSX root, writes the four known OpenGL files and configures backboardd
+  to run through sweet-bbd. Standalone boot loads them from userdata with sweetmailbox=0.
+  Contains CI kernel 42140063871 and the old shim, which predates the dual boot feature.
+  Uses native 1440x3120 with 60 Hz. This exact standalone image awaits a phone test.
+  Copied to Windows Desktop/platform-tools/ios16-corey-gl60 and confirmed the SHA-256:
+  60fa660464f7173047d6615d047a1ed2c1036e8f88cce85cea61e9a76658099c (12,160,743,256 bytes).
+  Clean file system checked with fsck.hfsplus -f -E. The forced read-only fsck path on
+  journaled regular files reported a primary-header error even when primary and alternate
+  matched, while quick check and the full exit-on-major-errors scan passed.
+  simg2img of the resulting image matched the verified 16 GiB raw image byte for byte.
+- New full-fork shim builds with the Android loader disabled by default and a symbol-table
+  check passed. The full boot packer makes 90/60 Hz variants with the documented 1125x2436
+  canvas scaled to the full panel, requires the 90 Hz, refresh, Metal and Bluetooth kernel
+  markers, and selects the user's existing userdata root. No kernel meeting those checks
+  is available yet. Changing vsync args alone does not switch the panel.
+- Cross-built and verified ARM64 code signature page hashes for 16 programs/libraries,
+  including main's Mesa GL, GL app interposers, SweetMetal2/Turnip, wland, btbridge,
+  sweet-displayd, sweet-containers, sweet-sysapps, HakiosAudio, autorun and tests.
+  Binaries are in out/full-userdata/next-userland. Metal source pinned by the fork;
+  local build logs: out/turnip-linux.log, out/m2v-linux.log, out/metal-bundle-linux.log.
+- Corrected stale context and missing timestamp additions in patch 0258. Successfully
+  applied all project patches in order to xnu-8796.141.3 after staging the pthread,
+  BearSSL and HFS sources, plus the local compatibility patch for Xcode 16+ iig.
+  Draft CI uses macos-15 as the successful CI source did, with newer-iig handling.
+  It is unrun. Local SDK/toolchain can cross-compile userland but the full XNU kernel
+  build still requires the macOS XNU toolchain or a separate Linux port.
+- Confirmed Corey's cancelled main runs 43325368981 and 42312840877 have no artifacts.
+  Successful Metal CI run 41987941622 (77289c2) has the NativeAdreno driver but lacks
+  panel refresh measurement, 90 Hz mode and Bluetooth. Downloaded and verified it for
+  inspection, and build-full-boot.py correctly refused it.
+- NEXT: obtain the latest Corey's kernel or run the macOS workflow on an authorized repo.
+  Collect the user's modem firmware/rmtfs copies and BT rampatch/NVM, and stage a configured
+  Procursus bootstrap if SSH is required. ADB did not show a device during preparation.
+  tools/install-full-root.py checks these inputs, installs the signed binaries and reuses
+  upstream launchd jobs. It has not been run against the full input set. Full activation,
+  wallpapers, radio and framerate require hardware verification. No phone write performed.
+
 # Active WSL handoff — Mox migration to Corey's fork (2026-11-14)
 
 - User explicitly requested setting aside the old wochgn/UniXNU GPU probes and using this fork.

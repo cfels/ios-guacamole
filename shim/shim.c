@@ -389,7 +389,7 @@ void shim_main(uint64_t dtb)
 	con_str("SHIM", "sweet milestone 4: xnu loader");
 	con_str("BOARD", BOARD_NAME);
 	con_skip();
-#if defined(BOARD_GUACAMOLE)
+#if defined(BOARD_GUACAMOLE) && defined(SWEET_DUAL_BOOT)
 	/*
 	 * Boot selector (bootsel.c, android.c): Alert Slider at the top = Android from boot_a,
 	 * middle or bottom = iOS. If Android cannot be started the reason stays on screen

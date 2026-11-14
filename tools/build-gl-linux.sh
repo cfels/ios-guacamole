@@ -62,7 +62,7 @@ cd "$SOURCE"
 bash userland/mesa/mk-mesa.sh
 # Only GPU-related helpers for the initial migration.
 SDK=$SWEET_IOS_SDK
-OUT="$ROOT/out/gl-userland"
+OUT=${SWEET_GL_OUT:-$ROOT/out/gl-userland}
 mkdir -p "$OUT"
 CC=(clang -isysroot "$SDK" -O2 -Wall -Wextra)
 build() {
@@ -77,6 +77,15 @@ build libsweet-bbd.dylib userland/bbd/bbd-insert.c -dynamiclib -install_name /us
 MESA=userland/mesa/build
 cp "$MESA/out/libOSMesa.8.dylib" "$OUT/"
 build osmesa-triangle userland/gputest/osmesa-triangle.c -I"$MESA/mesa-25.0.7/include" "$OUT/libOSMesa.8.dylib" -Wl,-rpath,@executable_path
-python3 userland/gpu/mkeagl.py userland/gpu/eagl_slots.txt "$MESA/out/gl.xml" "$MESA/out/exported-gl.txt" userland/gpu/eagl.c > "$OUT/eagl_gen.h"
+eagl_args=()
+if [[ -f userland/gpu/glapp.c ]]; then
+    grep -o '_gl[A-Za-z0-9_]*' "$SDK/System/Library/Frameworks/OpenGLES.framework/OpenGLES.tbd" |
+        sed 's/^_//' | sort -u > "$OUT/opengles-exports.txt"
+    eagl_args+=("$OUT/opengles-exports.txt")
+fi
+python3 userland/gpu/mkeagl.py userland/gpu/eagl_slots.txt "$MESA/out/gl.xml" "$MESA/out/exported-gl.txt" userland/gpu/eagl.c "${eagl_args[@]}" > "$OUT/eagl_gen.h"
 build libsweet-gl.dylib userland/gpu/eagl.c userland/gpu/gl_osmesa.c -dynamiclib -install_name /usr/lib/libsweet-gl.dylib -I"$OUT" -Iuserland/gpu -I"$MESA/mesa-25.0.7/include" "$OUT/libOSMesa.8.dylib" -Wl,-rpath,/usr/lib -Wno-unused-but-set-variable -framework OpenGLES -framework IOKit -framework IOSurface -framework CoreFoundation -lobjc
+if [[ -f userland/gpu/glapp.c ]]; then
+    build libsweet-glapp.dylib userland/gpu/glapp.c userland/gpu/nullal.c -dynamiclib -install_name /usr/lib/libsweet-glapp.dylib -I"$OUT" "$OUT/libsweet-gl.dylib" -framework OpenGLES -framework OpenAL -Wl,-U,_sweet_gl_current_table -Wno-deprecated-declarations
+fi
 (cd "$OUT" && sha256sum sweet-autorun sweet-bbd redwood-gpu-test osmesa-triangle *.dylib > SHA256SUMS)

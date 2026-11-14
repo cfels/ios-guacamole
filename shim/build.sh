@@ -12,16 +12,25 @@ sweet) ;;
 guacamole) CFLAGS="$CFLAGS -DBOARD_GUACAMOLE" ;;
 *) echo "unknown BOARD=$BOARD" >&2; exit 1 ;;
 esac
+sources=(start.S shim.c console.c mmu.c fdt.c loader.c ufs.c spmi.c)
+if [[ ${DUAL_BOOT:-0} == 1 ]]; then
+    [[ $BOARD == guacamole ]] || { echo "Dual boot requires BOARD=guacamole" >&2; exit 1; }
+    CFLAGS="$CFLAGS -DSWEET_DUAL_BOOT"
+    sources+=(bootsel.c android.c)
+fi
 mkdir -p out
-for f in start.S shim.c console.c mmu.c fdt.c loader.c ufs.c spmi.c bootsel.c android.c; do
-	$CC $CFLAGS -c $f -o out/${f%.*}.o
+objects=()
+for f in "${sources[@]}"; do
+    object=out/${f%.*}.o
+    $CC $CFLAGS -c "$f" -o "$object"
+    objects+=("$object")
 done
 # The image runs wherever ABL puts it with no relocation pass: only the
 # header's image_size (start.o, linked at 0) may be an absolute address.
-abs=$(aarch64-linux-gnu-readelf -r out/shim.o out/console.o out/mmu.o out/fdt.o out/loader.o out/ufs.o out/spmi.o out/bootsel.o out/android.o | grep -c ABS64 || true)
+abs=$(aarch64-linux-gnu-readelf -r "${objects[@]:1}" | grep -c ABS64 || true)
 [ "$abs" = 0 ] || { echo "error: $abs absolute relocations in C objects" >&2; exit 1; }
 $CC $CFLAGS -static -T shim.ld -Wl,--build-id=none -Wl,--no-warn-rwx-segments -Wl,-N \
-	out/start.o out/shim.o out/console.o out/mmu.o out/fdt.o out/loader.o out/ufs.o out/spmi.o out/bootsel.o out/android.o -o out/shim.elf
+	"${objects[@]}" -o out/shim.elf
 $OBJCOPY -O binary out/shim.elf out/Image
 # ABL copies the file; pad to image_size so .bss/stacks exist as zeroed bytes.
 size=$((0x$(aarch64-linux-gnu-nm out/shim.elf | awk '$3=="_end"{print $1}')))
