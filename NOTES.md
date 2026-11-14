@@ -1,3 +1,42 @@
+# Active WSL handoff — Mox migration to Corey's fork (2026-11-14)
+
+- User explicitly requested setting aside the old wochgn/UniXNU GPU probes and using this fork.
+  Checkout: /home/moxiu/ios-guacamole-corey, branch mox-gpu-integration, upstream main
+  dea16ae8aafc08b0f44bdb0e16894ce9aa6fa46f. Old repos remain untouched except a draft source
+  snapshot in ios-guacamole/out/gpu-bringup/fork-evaluation.
+- User chose existing CI artifacts first. Downloaded and checksum-verified successful CI run
+  42140063871, artifact 13467912846, source 68483019cf48baf0fee45120f814635779505eff.
+  This includes patches through 0143 (RedwoodGPU + OpenGL); it does NOT include the newer
+  Metal path or latest main's other hardware changes. Exact source is out/ci-source worktree.
+- Built that source's guacamole shim in WSL. tools/build-ci-boot.py packs its complete CI
+  kernel (no old r15 binary patching), all six vendor GPU firmware files, original D22AP
+  product data, and a native 1440x3120 ADT with sweetfb_native=1. boot_a was read from
+  the user's TWRP phone for the Android header and DTB. All reads only so far.
+- Cross-built matching Mesa25.0.7 freedreno, EAGL bridge, backboardd wrapper, autorun and tests
+  on Linux using LLVM21, Theos iPhoneOS16.5 SDK at 0222fd5413cf4b9af096f37b4621afa2688572f7,
+  local Procursus ldid and locally extracted Ubuntu libplist packages. No sudo installation.
+  tools/build-gl-linux.sh records the compatibility wrappers. Important: do not pass
+  -fuse-ld during compile-only Meson probes (it falsely fails feature checks under -Werror).
+- Read the phone's actual HFSX launchd.plist with tools/read-hfs-file-adb.py (read-only inline
+  extents parser). Preserve all jobs except backboardd's wrapper and add com.sweet.autorun.
+  No existing GPU library/helper filenames were found in the catalog.
+- tools/pack-gl-update.py builds the 11-file SWEETBOX update, plus an original launchd rollback.
+  tools/verify-gl-bundle.py passes: every signed Mach-O code page, both boot image SHA-1 headers,
+  exact kernel segments after rebases, complete firmware, native geometry and all box entries.
+- Built artifacts: out/mox-corey-gl/boot-corey-gl-native.img (sweetgpu=11),
+  boot-corey-software-rescue.img (sweetgpu=0 sweetbbd=0 sweetgl=0), corey-gl-install.box,
+  corey-gl-rollback.box. Full hashes and boot args in build-manifest.json/install-manifest.json.
+- Backups: out/device/launchd.plist.original and rawdump-before-corey-gl.img (134217728 bytes);
+  rawdump SHA256 matched a read on the device. Device backups/SDKs/Apple artifacts are ignored.
+- User chose to install manually. All four files, manifests, README and SHA256SUMS were
+  copied to the Windows Desktop/platform-tools directory and compared byte-for-byte. Nothing was
+  written to any phone partition; no reboot was requested. NEXT: user installs/boots, then
+  recover the userdata console ring. Installation modifies the root's launch config and adds libraries;
+  it does not reformat userdata. Original launchd is in both the host backup and rollback box.
+  No on-device GPU success is established by this build. Readback must report 0x5eed0640,
+  Mesa must report FD640 and pass triangle validation, and backboardd must load libsweet-gl.
+  Old probe HFI bypasses and old GMU faulttrace code are not part of this build.
+
 # Active handoff — dual boot: Alert Slider boot selector in the shim (2026-11-12 17:50, Claude)
 
 - Layout: slot a boot_a = Android 12 userdebug + Magisk (header v2, UNCOMPRESSED_IMG 48.5 MB Image, text_offset

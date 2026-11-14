@@ -23,3 +23,6 @@ work/
 launchd.plist.*
 *.tmp
 _to_delete/
+
+# Local WSL migration artifacts, SDKs, private device backups and build trees.
+/out/
