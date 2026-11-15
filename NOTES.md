@@ -1,3 +1,90 @@
+# Active handoff — shutdown works: PON config + PS_HOLD deassert (2026-11-16)
+
+- Shut Down now powers the phone off (measured on the phone, 2026-11-16).
+- Root cause: PSCI SYSTEM_OFF re-enters a warm reset because the ABL leaves
+  the PM8150 PON in warm-reset mode. The complete fix matches the stock
+  kernel, split across two drivers (qpnp-power-on.c configures, msm-poweroff.c
+  deasserts PS_HOLD): (1) configure the PON over SPMI (RESET_CTL2(0x5b)=0,
+  RESET_CTL(0x5a)=4 shutdown, RESET_CTL2(0x5b)=0x80 S2_RESET_EN), then
+  (2) deassert PS_HOLD by writing 0 to 0xc264000 (the trigger).
+- Patch 0268-guacamole-pmic-poweroff.patch adds bsd/dev/sweet_power.c.
+  Commits 8cfd5bd (PON config) + 9fdbb2c (PS_HOLD deassert). CI run
+  43769475393 succeeded; kernel SOURCE_COMMIT 9fdbb2c verified.
+- Boot images in out/power-build/0268b, copied to Windows
+  platform-tools/boot-shutdown. 90 Hz sha256 cc26286c... Flashed to boot_a;
+  Shut Down powers off. PSCI SYSTEM_OFF is now only a fallback.
+- verify-power-boot.py updated for the new "final UFS flush before power-off"
+  and "PMIC power-off" markers.
+- Correction: writing PS_HOLD (0xc264000) from EL1 does NOT fault on this
+  phone — the kernel writes it cleanly. The board.h "PS_HOLD XPU-protected"
+  note is wrong for the kernel (MMU-on) context; likely specific to the
+  MMU-off shim. Leave board.h until the shim path is re-tested.
+
+# Active handoff — shutdown reboots: PON power-off fix (2026-11-15)
+
+- Shut Down reboots instead of powering off. Root cause: this ABL leaves the
+  PM8150 PON in warm-reset mode (PON_RESET_CTL=1, PON_RESET_CTL2=0x80), so patch
+  0267's PSCI SYSTEM_OFF re-enters a warm reset. Direct PS_HOLD MMIO (0x0c264000)
+  is XPU-protected from EL1; the PON must be reconfigured over SPMI.
+- New patch 0268-guacamole-pmic-poweroff.patch adds bsd/dev/sweet_power.c, which
+  runs the TF-A qti_pmic_prepare_shutdown() sequence from EL1 over the SPMI
+  arbiter: RESET_CTL2(0x5b)=0, 1 ms, RESET_CTL(0x5a)=4 (shutdown),
+  RESET_CTL2(0x5b)=0x80 (S2_RESET_EN). haltRestart now calls sweet_pmic_power_off()
+  after the final UFS flush, then falls back to PSCI SYSTEM_OFF.
+- Patch applies cleanly on the post-0267 tree (git apply --check + round-trip
+  verified). NOT built/tested. Local xnu-cc.py syntax check skipped: the
+  Apple-fork clang (~/swift/usr/bin/clang) is absent in this WSL.
+- NEXT: macOS CI build, flash boot_a, test Shut Down; expect the phone to stay
+  off. PON APID and power-off rc print to console if it still reboots.
+
+# Active handoff — native shutdown and persistent boot (2026-11-15)
+
+- User narrowed work to native shutdown and power-button boot, selecting
+  boot-corey-full-ios-90hz.img as the base. Wi-Fi edits remain uncommitted
+  in the working tree and are outside this build.
+- Added 0267-guacamole-system-off.patch. New platform halt handler queries
+  PSCI support, flushes/stops UFS I/O and invokes SYSTEM_OFF. No phone test.
+- Patch application and Linux clang syntax checks of both changed sources
+  passed using CI 43656713836 headers; 17 inherited C++ warnings match the
+  unchanged baseline. Full macOS build 43754879607 succeeded for commit
+  aab3a08b62905ccd30d034c68db1744877a90d66 on power-shutdown-20261115.
+- Read-only TWRP preflight: active slot A, boot_a/boot_b each 100663296
+  bytes. Fresh backups and hashes are in out/power-build/device and copied
+  byte-for-byte to Windows platform-tools/ios16-corey-power/backups.
+  No partition write or slot change performed.
+- Packaged 90 Hz and 60 Hz images under out/power-build/release, copied to
+  Windows platform-tools/ios16-corey-power. tools/verify-power-boot.py
+  checks the kernel segments, shim, Android header checksum, DTB, geometry
+  and boot args; corrupted-shim rejection also passed. ADT differs from
+  the previous full iOS image only in the fresh random seed. Both builds
+  fit boot_a. No userdata rebuild or installed-root changes.
+- 90 Hz SHA-256: 4fd578923484d64ae55b212e758cdf11da6c16e9d3f85a1285c6e07907f1a0cb.
+  60 Hz SHA-256: 89e32e2b5e2b6a972a1f219d122f57d0530cf81b8352056aeda7eb29b341f5b2.
+- docs/BOOT_AND_SHUTDOWN.md describes the native menu test and rollback.
+  Temporary boot/menu/shutdown are NOT TESTED. Next: user temporarily boots
+  the 90 Hz image and checks Settings > General > Shut Down, then confirms
+  boot_a as the persistent installation target. Do not flash without that
+  explicit target confirmation; recheck the active slot immediately before.
+
+# Active handoff — Fresh iOS userdata and rebuilt 90 Hz boot (2026-11-15)
+
+- Delivered the device-specific iOS 16.7.16 (20H392) images to
+  C:\Users\Mox\Desktop\platform-tools\ios16-corey-device. Boot images use
+  cfels/ios-guacamole CI run 43656713836, commit
+  8c89dcad1f7014ae3bed47f30e06a57f2efa6157, and the iOS-only shim.
+- Built userdata from the clean case-sensitive root with Mesa/OpenGL ES,
+  SweetMetal2/Turnip, brightness and Night Shift, wallpaper support, Wi-Fi
+  and Bluetooth stock firmware, and key-only Procursus SSH. QEMU verified
+  installed files and launch jobs. HFS+ fsck passed and the expanded sparse
+  image was byte-identical to the verified raw image.
+- SHA-256 verified on Windows for all three images. Userdata (12,367,139,960
+  bytes): 9c049f30a1910746a53b26a70a8dfd337148c36e9ea7e846de15a6920a9d9206.
+  90 Hz boot: 2cacb8ff4c785c23aab9565a9251025d1f5a41efdc61d7edb41768439c00af43.
+  60 Hz boot: 2f49cc28532caef965a83dc98518de6834cd6b13703a699181ac96d287988f3a.
+- The user will flash userdata and temporarily boot the 90 Hz image.
+  First boot, Wi-Fi, Bluetooth audio, SSH login, wallpapers and measured
+  graphics performance are pending hardware verification.
+
 # Active handoff — cfels CI and the matching 90 Hz graphics image (2026-11-15)
 
 - The user forked both repos and authorized pushes. cfels/ios-guacamole main
