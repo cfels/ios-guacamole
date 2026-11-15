@@ -47,3 +47,15 @@ Use a Linux VM with hfsplus support if WSL cannot mount HFSX. Use mtools and
 tools/pull-radio-firmware.py to collect the modem, rmtfs and Bluetooth inputs
 locally with the device in TWRP. Those files belong to the individual phone.
 Keep them out of Git and CI.
+
+After a phone test, return to TWRP and pull the log from userdata:
+
+```sh
+mkdir -p out/device-logs
+PART=userdata ADB=/mnt/c/Users/Mox/Desktop/platform-tools/adb.exe \
+  tools/sweet-log-pull.sh out/device-logs/corey-first-boot.txt
+```
+
+Check the panel mode and measured refresh, the RedwoodGPU startup, and the
+SweetMetal2 loader messages. The measured panel rate is separate from the
+rate at which CoreAnimation or a game renders frames.
