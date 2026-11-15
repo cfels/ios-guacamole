@@ -1,3 +1,22 @@
+# Active handoff — Fresh iOS userdata and rebuilt 90 Hz boot (2026-11-15)
+
+- Delivered the device-specific iOS 16.7.16 (20H392) images to
+  C:\Users\Mox\Desktop\platform-tools\ios16-corey-device. Boot images use
+  cfels/ios-guacamole CI run 43656713836, commit
+  8c89dcad1f7014ae3bed47f30e06a57f2efa6157, and the iOS-only shim.
+- Built userdata from the clean case-sensitive root with Mesa/OpenGL ES,
+  SweetMetal2/Turnip, brightness and Night Shift, wallpaper support, Wi-Fi
+  and Bluetooth stock firmware, and key-only Procursus SSH. QEMU verified
+  installed files and launch jobs. HFS+ fsck passed and the expanded sparse
+  image was byte-identical to the verified raw image.
+- SHA-256 verified on Windows for all three images. Userdata (12,367,139,960
+  bytes): 9c049f30a1910746a53b26a70a8dfd337148c36e9ea7e846de15a6920a9d9206.
+  90 Hz boot: 2cacb8ff4c785c23aab9565a9251025d1f5a41efdc61d7edb41768439c00af43.
+  60 Hz boot: 2f49cc28532caef965a83dc98518de6834cd6b13703a699181ac96d287988f3a.
+- The user will flash userdata and temporarily boot the 90 Hz image.
+  First boot, Wi-Fi, Bluetooth audio, SSH login, wallpapers and measured
+  graphics performance are pending hardware verification.
+
 # Active handoff — cfels CI and the matching 90 Hz graphics image (2026-11-15)
 
 - The user forked both repos and authorized pushes. cfels/ios-guacamole main
