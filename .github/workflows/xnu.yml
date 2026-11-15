@@ -19,7 +19,11 @@ on:
     branches: [main]
     paths:
       - "xnu/patches/**"
+      - "xnu/local/**"
       - ".github/workflows/xnu.yml"
+
+permissions:
+  contents: read
 
 concurrency:
   group: xnu-${{ github.ref }}
@@ -58,18 +62,17 @@ jobs:
           printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
           sudo chmod +x /usr/local/bin/xcodes
           sw_vers
-          ls -d /Applications/Xcode*.app
-          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
-          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
-          sudo xcode-select -s "$XC"
+          XC=/Applications/Xcode_16.4.app/Contents/Developer
+          test -d "$XC"
+          export DEVELOPER_DIR="$XC"
+          echo "DEVELOPER_DIR=$DEVELOPER_DIR" >> "$GITHUB_ENV"
           xcodebuild -version
           xcrun --find iig
-          major=$("$XC/Contents/Developer/usr/bin/xcodebuild" -version | awk '/^Xcode / {split($2,v,"."); print v[1]}')
-          if [[ "$major" -ge 16 ]]; then
-            for patch in xnu/local/*.patch; do
-              cp "$patch" "dxb/patches/9999-local-$(basename "$patch")"
-            done
-          fi
+          # Xcode 16's iig expects the newer IORPC layout. Use the same
+          # compatibility patch as tools/xnu-local-build.sh.
+          for patch in xnu/local/*.patch; do
+            cp "$patch" "dxb/patches/9999-local-$(basename "$patch")"
+          done
 
       - name: Build
         working-directory: dxb
@@ -80,6 +83,7 @@ jobs:
 
       - name: Package build tree for local compiles
         if: always()
+        continue-on-error: true
         run: |
           # Generated headers, config option headers, mig output and the patched
           # source: enough to re-run any single compile command from the log locally.
@@ -99,8 +103,9 @@ jobs:
           name: xnu-buildtree
           path: buildtree.tgz
           retention-days: 7
+          if-no-files-found: ignore
 
-      - name: Inspect closed KDK support libs
+      - name: Inspect KDK support library symbols
         if: always()
         run: |
           mkdir -p out/kdk-libs
@@ -112,17 +117,30 @@ jobs:
           done
           ls -la out/kdk-libs
 
-      - name: Collect
-        if: always()
+      - name: Collect and verify the built kernel
         run: |
-          mkdir -p out
-          cp -R dxb/fakeroot/System/Library/Kernels/. out/ 2>/dev/null || true
-          ls -la out
-          (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
+          config=$(printf '%s' "$KERNEL_CONFIG" | tr '[:upper:]' '[:lower:]')
+          machine=$(printf '%s' "$MACHINE_CONFIG" | tr '[:upper:]' '[:lower:]')
+          kernel="dxb/fakeroot/System/Library/Kernels/kernel.$config.$machine"
+          test -s "$kernel"
+          if [[ "$MACHINE_CONFIG" == SWEET ]]; then
+            python3 tools/build-full-boot.py --check-kernel "$kernel"
+          fi
+          mkdir -p out/kernel
+          cp "$kernel" out/kernel/
+          printf '%s\n' "$GITHUB_SHA" > out/kernel/SOURCE_COMMIT
+          (cd out/kernel && shasum -a 256 kernel.* > SHA256SUMS)
 
       - uses: actions/upload-artifact@v4
-        if: always()
+        id: kernel-artifact
         with:
           name: xnu-kernel
-          path: out/
-          if-no-files-found: warn
+          path: out/kernel/
+          if-no-files-found: error
+
+      - name: Report kernel artifact
+        env:
+          ARTIFACT_URL: ${{ steps.kernel-artifact.outputs.artifact-url }}
+        run: |
+          printf '[Download xnu-kernel](%s)\n\n' "$ARTIFACT_URL" >> "$GITHUB_STEP_SUMMARY"
+          cat out/kernel/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"

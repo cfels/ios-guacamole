@@ -10,22 +10,11 @@ import sys
 import time
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kernel", type=Path, help="Built kernel.development.sweet")
-    parser.add_argument("stock_boot", type=Path, help="Boot image from the same phone for its DTB")
-    parser.add_argument("output", type=Path, help="New output directory")
-    args = parser.parse_args()
-    repo = Path(__file__).resolve().parent.parent
-    kernel = args.kernel.resolve()
-    stock_boot = args.stock_boot.resolve()
-    output = args.output.resolve()
-
+def check_kernel(binary):
     # CI has older builds with some of these features. Check the actual Mach-O,
     # so an old artifact cannot accidentally be shipped as the full build.
-    binary = kernel.read_bytes()
     if not binary.startswith(bytes.fromhex("cffaedfe0c000001")):
-        parser.error(f"{kernel} must be an ARM64 Mach-O")
+        raise ValueError("Expected an ARM64 Mach-O")
     required = {
         "90 Hz panel mode": b"panel switched to 90 Hz",
         "NativeAdreno Metal bridge": b"SweetMetal2",
@@ -34,7 +23,33 @@ def main():
     }
     missing = [name for name, marker in required.items() if marker not in binary]
     if missing:
-        parser.error(f"{kernel} lacks {', '.join(missing)}")
+        raise ValueError(f"Missing kernel features: {', '.join(missing)}")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check-kernel", action="store_true", help="Verify the kernel without packaging")
+    parser.add_argument("kernel", type=Path, help="Built kernel.development.sweet")
+    parser.add_argument("stock_boot", type=Path, nargs="?", help="Boot image from the same phone for its DTB")
+    parser.add_argument("output", type=Path, nargs="?", help="New output directory")
+    args = parser.parse_args()
+    repo = Path(__file__).resolve().parent.parent
+    kernel = args.kernel.resolve()
+
+    binary = kernel.read_bytes()
+    try:
+        check_kernel(binary)
+    except ValueError as error:
+        parser.error(f"{kernel}: {error}")
+    if args.check_kernel:
+        if args.stock_boot or args.output:
+            parser.error("--check-kernel takes only the kernel path")
+        print(f"{kernel}: ARM64 kernel contains all required feature markers")
+        return
+    if args.stock_boot is None or args.output is None:
+        parser.error("packaging requires stock_boot and output")
+    stock_boot = args.stock_boot.resolve()
+    output = args.output.resolve()
     stock_boot.stat()
     for name in ("a640_gmu.bin", "a630_sqe.fw", "a640_zap.mdt",
                  "a640_zap.b00", "a640_zap.b01", "a640_zap.b02"):
