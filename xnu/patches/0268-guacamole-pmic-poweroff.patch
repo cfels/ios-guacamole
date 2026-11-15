@@ -12,10 +12,10 @@ index bf4e8e1..fa6dbb6 100644
  bsd/dev/sweet_gpu.c			standard
 diff --git a/bsd/dev/sweet_power.c b/bsd/dev/sweet_power.c
 new file mode 100644
-index 0000000..6d6e340
+index 0000000..4b4183a
 --- /dev/null
 +++ b/bsd/dev/sweet_power.c
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,117 @@
 +/*
 + * PM8150 (SID0) PON power-off from EL1 through the SPMI arbiter v5.
 + *
@@ -44,6 +44,7 @@ index 0000000..6d6e340
 +#define RESET_TYPE_SHUTDOWN 4u
 +#define S2_RESET_EN    0x80u
 +#define PWR_NO_APID    0xffffu
++#define PSHOLD_PA      0x0c264000u
 +
 +static vm_offset_t pwr_core, pwr_cnfg;
 +
@@ -123,6 +124,11 @@ index 0000000..6d6e340
 +		pwr_write8(chn, PON_RESET_CTL, RESET_TYPE_SHUTDOWN);
 +		pwr_write8(chn, PON_RESET_CTL2, S2_RESET_EN);
 +		delay(1000);
++		/* Deassert PS_HOLD: the PMIC powers off per the type set above. */
++		vm_offset_t pshold = ml_io_map(PSHOLD_PA, 0x1000);
++		if (pshold) {
++			pwr_wr(pshold, 0, 0);
++		}
 +	}
 +	printf("SWEET POWER: PMIC power-off rc=%d\n", rc);
 +}
