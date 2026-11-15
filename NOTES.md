@@ -1,3 +1,25 @@
+# Active handoff — shutdown works: PON config + PS_HOLD deassert (2026-11-16)
+
+- Shut Down now powers the phone off (measured on the phone, 2026-11-16).
+- Root cause: PSCI SYSTEM_OFF re-enters a warm reset because the ABL leaves
+  the PM8150 PON in warm-reset mode. The complete fix matches the stock
+  kernel, split across two drivers (qpnp-power-on.c configures, msm-poweroff.c
+  deasserts PS_HOLD): (1) configure the PON over SPMI (RESET_CTL2(0x5b)=0,
+  RESET_CTL(0x5a)=4 shutdown, RESET_CTL2(0x5b)=0x80 S2_RESET_EN), then
+  (2) deassert PS_HOLD by writing 0 to 0xc264000 (the trigger).
+- Patch 0268-guacamole-pmic-poweroff.patch adds bsd/dev/sweet_power.c.
+  Commits 8cfd5bd (PON config) + 9fdbb2c (PS_HOLD deassert). CI run
+  43769475393 succeeded; kernel SOURCE_COMMIT 9fdbb2c verified.
+- Boot images in out/power-build/0268b, copied to Windows
+  platform-tools/boot-shutdown. 90 Hz sha256 cc26286c... Flashed to boot_a;
+  Shut Down powers off. PSCI SYSTEM_OFF is now only a fallback.
+- verify-power-boot.py updated for the new "final UFS flush before power-off"
+  and "PMIC power-off" markers.
+- Correction: writing PS_HOLD (0xc264000) from EL1 does NOT fault on this
+  phone — the kernel writes it cleanly. The board.h "PS_HOLD XPU-protected"
+  note is wrong for the kernel (MMU-on) context; likely specific to the
+  MMU-off shim. Leave board.h until the shim path is re-tested.
+
 # Active handoff — shutdown reboots: PON power-off fix (2026-11-15)
 
 - Shut Down reboots instead of powering off. Root cause: this ABL leaves the
