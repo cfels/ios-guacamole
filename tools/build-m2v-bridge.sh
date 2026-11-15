@@ -23,7 +23,7 @@ if [ ! -d "$SRC/crates" ]; then
 	for p in "$ROOT"/userland/metal2/bridge/patches/*.patch; do git -C "$SRC" apply "$p"; done
 fi
 mkdir -p "$OUT"
-LLVM_AS=/opt/homebrew/opt/llvm/bin/llvm-as
+LLVM_AS=${LLVM_AS:-/opt/homebrew/opt/llvm/bin/llvm-as}
 "$LLVM_AS" -o "$OUT/runtime_examples.air" "$SRC/crates/metal2vulkan-validation/fixtures/public/examples/runtime_examples.ll"
 "$LLVM_AS" -o "$OUT/function_constant.air" "$SRC/crates/metal2vulkan-validation/fixtures/public/kernel_function_constant_gate_fold.ll"
 cat > "$OUT/Cargo.toml" <<EOT

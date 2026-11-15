@@ -1,3 +1,39 @@
+# Active handoff — cfels CI and the matching 90 Hz graphics image (2026-11-15)
+
+- The user forked both repos and authorized pushes. cfels/ios-guacamole main
+  commit 8c89dcad1f7014ae3bed47f30e06a57f2efa6157 fixes the retired macOS
+  runner, pins Xcode 16.4 with its IORPC compatibility patch, and checks the
+  built SWEET kernel before uploading. Run 43656713836 succeeded. Downloaded
+  xnu-kernel artifact 14138546392, verified GitHub's archive digest, the
+  embedded SOURCE_COMMIT and kernel SHA256SUMS. Corey's earlier Metal CI
+  artifact is no longer needed for this build.
+- cfels/UniXNU-guacamole main commit c40255b makes both workflows use
+  macos-15 and the pinned upstream sources their jobs need. The 4 KiB
+  kernel workflow has its own research patch series and does not supply the
+  iOS-only boot image. Data seed CI 43657266025 succeeded. Experimental
+  kernel run 43656787109 was still in progress during the image build.
+- Reproduced the signed 16-binary userland build in WSL with
+  tools/build-full-userland-wsl.sh. tools/stage-xnu-wsl.sh applies the full
+  pinned Apple XNU 8796 patch stack in WSL, including the 0258 haptic fix.
+  WSL setup and workflow split are in docs/guacamole-wsl.md.
+- Built boot-corey-full-ios-90hz.img and boot-corey-full-ios-60hz.img
+  from the new successful CI kernel. Compared the packed kernel segments,
+  Adreno firmware properties, DTB, args and Android header checksums to the
+  exact inputs. The iOS-only shim has no Android loader or slider selector.
+  Boot args keep userdata as the root and use the fork's scaled display.
+- Mounted a fresh copy of the clean iOS 16.7.16 HFSX root in the Linux VM and
+  installed main's OpenGL, app interposers, SweetMetal2/Turnip, display and
+  audio components, autorun, and helpers. Its launch jobs and paths were
+  checked. fsck passed. Android sparse conversion expanded to an exact
+  byte-for-byte match with the 16 GiB raw root. Output:
+  out/full-userdata/graphics-stage/release/ios16.7.16-corey-graphics-userdata.img
+  SHA-256 fe93e35d4b39a135ae087c17d244ca6b75a4cdc37f3ff164c864bec670dca296.
+- Still needs hardware testing. Wi-Fi and Bluetooth jobs are gated on
+  --radio-firmware, SSH on --ssh-bootstrap. Use tools/pull-radio-firmware.py
+  when the phone is connected in TWRP. It reads and verifies partitions
+  without mounting userdata. It passed local FAT extraction checks.
+  Keep raw images and phone-specific data under the ignored out directory.
+
 # Active WSL handoff — standalone userdata and full fork integration (2026-11-15)
 
 - User reported the earlier Corey OpenGL boot works. Requested a clean full userdata image,
