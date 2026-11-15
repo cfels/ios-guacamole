@@ -28,8 +28,10 @@ def main():
     args = parser.parse_args()
     kernel = args.kernel.read_bytes()
     shim = (args.directory / "shim.Image").read_bytes()
-    require(b"SWEET POWER: final UFS flush before SYSTEM_OFF" in kernel,
-            "Kernel lacks the shutdown implementation")
+    require(b"SWEET POWER: final UFS flush before power-off" in kernel,
+            "Kernel lacks the shutdown flush path")
+    require(b"SWEET POWER: PMIC power-off" in kernel,
+            "Kernel lacks the PMIC power-off implementation")
     source = args.kernel.with_name("SOURCE_COMMIT").read_text().strip()
     require(len(source) == 40 and all(c in "0123456789abcdef" for c in source),
             "Missing full kernel source commit")
