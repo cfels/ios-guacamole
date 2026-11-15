@@ -1,0 +1,161 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+index bf4e8e1..fa6dbb6 100644
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -111,6 +111,7 @@ bsd/dev/sweet_touch.c			standard
+ bsd/dev/sweet_cpufreq.c			standard
+ bsd/dev/sweet_rpmh.c			standard
+ bsd/dev/sweet_spmi.c			standard
++bsd/dev/sweet_power.c			standard
+ bsd/dev/sweet_pmem.c			standard
+ bsd/dev/sweet_usb.c			standard
+ bsd/dev/sweet_gpu.c			standard
+diff --git a/bsd/dev/sweet_power.c b/bsd/dev/sweet_power.c
+new file mode 100644
+index 0000000..6d6e340
+--- /dev/null
++++ b/bsd/dev/sweet_power.c
+@@ -0,0 +1,111 @@
++/*
++ * PM8150 (SID0) PON power-off from EL1 through the SPMI arbiter v5.
++ *
++ * PSCI SYSTEM_OFF on this ABL re-enters a warm reset: the bootloader leaves
++ * PS_HOLD in warm-reset mode (PON_RESET_CTL=1, PON_RESET_CTL2=0x80), so a
++ * real power-off must reconfigure the PON itself -- clear S2_RESET_EN, set
++ * RESET_TYPE_SHUTDOWN, then re-assert S2_RESET_EN. This mirrors TF-A
++ * qti_pmic_prepare_shutdown() and the Android qpnp-power-on driver, both of
++ * which run this same sequence from the app processor.
++ */
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <kern/clock.h>
++#include <machine/machine_routines.h>
++
++extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
++void sweet_pmic_power_off(void);
++
++#define PWR_CORE_PA   0x0c440000u
++#define PWR_CNFG_PA   0x0c40a000u
++#define PWR_CHNLS_PA  0x0c600000u
++#define PON_PPID      0x008u      /* SID 0, peripheral 0x08 */
++#define PON_RESET_CTL  0x5au      /* absolute 0x85a */
++#define PON_RESET_CTL2 0x5bu      /* absolute 0x85b */
++#define RESET_TYPE_SHUTDOWN 4u
++#define S2_RESET_EN    0x80u
++#define PWR_NO_APID    0xffffu
++
++static vm_offset_t pwr_core, pwr_cnfg;
++
++static uint32_t
++pwr_rd(vm_offset_t base, unsigned off)
++{
++	uint32_t v = *(volatile uint32_t *)(base + off);
++	__asm__ volatile("dmb oshld" ::: "memory");
++	return v;
++}
++
++static void
++pwr_wr(vm_offset_t base, unsigned off, uint32_t v)
++{
++	__asm__ volatile("dmb oshst" ::: "memory");
++	*(volatile uint32_t *)(base + off) = v;
++	__asm__ volatile("dsb osh" ::: "memory");
++}
++
++static uint16_t
++pwr_find_pon_apid(unsigned count)
++{
++	uint16_t found = PWR_NO_APID;
++	for (unsigned i = 0; i < count; ++i) {
++		uint32_t map = pwr_rd(pwr_core, 0x900u + 4u * i);
++		if (!map || ((map >> 8) & 0xfffu) != PON_PPID) {
++			continue;
++		}
++		unsigned owner = pwr_rd(pwr_cnfg, 0x700u + 4u * i) & 7u;
++		if (found == PWR_NO_APID || owner == 0) {
++			found = (uint16_t)i;
++		}
++	}
++	return found;
++}
++
++/* One-byte EXT_WRITEL on the PON write channel; 0 on success. */
++static int
++pwr_write8(vm_offset_t chn, uint16_t addr, uint8_t val)
++{
++	pwr_wr(chn, 0x10, val);                                   /* WDATA0 */
++	pwr_wr(chn, 0x00, (0u << 27) | ((uint32_t)(addr & 0xffu) << 4));
++	for (unsigned i = 0; i < 1000; ++i) {
++		uint32_t st = pwr_rd(chn, 0x08);
++		if (st & 1u) {
++			return (st & 0x0eu) ? -2 : 0;
++		}
++		delay(1);
++	}
++	return -3;
++}
++
++void
++sweet_pmic_power_off(void)
++{
++	pwr_core = ml_io_map(PWR_CORE_PA, 0x2000);
++	pwr_cnfg = ml_io_map(PWR_CNFG_PA, 0x1000);
++	if (!pwr_core || !pwr_cnfg) {
++		printf("SWEET POWER: PMIC SPMI map failed\n");
++		return;
++	}
++	unsigned count = pwr_rd(pwr_core, 4) & 0x7ffu;
++	uint16_t apid = pwr_find_pon_apid(count);
++	if (apid == PWR_NO_APID) {
++		printf("SWEET POWER: PON APID not found (count=%u)\n", count);
++		return;
++	}
++	vm_offset_t chn = ml_io_map(PWR_CHNLS_PA + 0x10000u * apid, 0x1000);
++	if (!chn) {
++		printf("SWEET POWER: PON write channel map failed (apid=%u)\n", apid);
++		return;
++	}
++	printf("SWEET POWER: PON apid=%u -> RESET_TYPE_SHUTDOWN\n", apid);
++	int rc = pwr_write8(chn, PON_RESET_CTL2, 0x00);
++	if (rc == 0) {
++		delay(1000); /* 1 ms between clearing and re-arming S2 reset */
++		pwr_write8(chn, PON_RESET_CTL, RESET_TYPE_SHUTDOWN);
++		pwr_write8(chn, PON_RESET_CTL2, S2_RESET_EN);
++		delay(1000);
++	}
++	printf("SWEET POWER: PMIC power-off rc=%d\n", rc);
++}
++#endif /* ARM64_BOARD_CONFIG_SWEET */
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+index 3474953..475c324 100644
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -12,6 +12,7 @@
+ #include <pexpert/pexpert.h>
+ 
+ extern "C" int sweet_ufs_shutdown(void);
++extern "C" void sweet_pmic_power_off(void);
+ 
+ static int32_t
+ sweet_psci(uint32_t function, uint32_t argument)
+@@ -61,16 +62,14 @@ SweetPlatformExpert::haltRestart(unsigned int type)
+ {
+ 	if (type != kPEHaltCPU && type != kPEUPSDelayHaltCPU)
+ 		return IODTPlatformExpert::haltRestart(type);
+-	if (systemOffFeature < 0) {
+-		IOLog("SWEET POWER: SYSTEM_OFF unsupported, shutdown failed\n");
+-		return -1;
+-	}
+-	IOLog("SWEET POWER: final UFS flush before SYSTEM_OFF\n");
++	IOLog("SWEET POWER: final UFS flush before power-off\n");
+ 	int error = sweet_ufs_shutdown();
+ 	if (error) {
+ 		IOLog("SWEET POWER: UFS flush failed=%d, shutdown aborted\n", error);
+ 		return -1;
+ 	}
++	/* PSCI SYSTEM_OFF re-enters a warm reset here; reconfigure the PON. */
++	sweet_pmic_power_off();
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ 	int32_t result = sweet_psci(0x84000008, 0);
+ 	IOLog("SWEET POWER: SYSTEM_OFF returned=%d, shutdown failed\n", result);

@@ -1,3 +1,20 @@
+# Active handoff — shutdown reboots: PON power-off fix (2026-11-15)
+
+- Shut Down reboots instead of powering off. Root cause: this ABL leaves the
+  PM8150 PON in warm-reset mode (PON_RESET_CTL=1, PON_RESET_CTL2=0x80), so patch
+  0267's PSCI SYSTEM_OFF re-enters a warm reset. Direct PS_HOLD MMIO (0x0c264000)
+  is XPU-protected from EL1; the PON must be reconfigured over SPMI.
+- New patch 0268-guacamole-pmic-poweroff.patch adds bsd/dev/sweet_power.c, which
+  runs the TF-A qti_pmic_prepare_shutdown() sequence from EL1 over the SPMI
+  arbiter: RESET_CTL2(0x5b)=0, 1 ms, RESET_CTL(0x5a)=4 (shutdown),
+  RESET_CTL2(0x5b)=0x80 (S2_RESET_EN). haltRestart now calls sweet_pmic_power_off()
+  after the final UFS flush, then falls back to PSCI SYSTEM_OFF.
+- Patch applies cleanly on the post-0267 tree (git apply --check + round-trip
+  verified). NOT built/tested. Local xnu-cc.py syntax check skipped: the
+  Apple-fork clang (~/swift/usr/bin/clang) is absent in this WSL.
+- NEXT: macOS CI build, flash boot_a, test Shut Down; expect the phone to stay
+  off. PON APID and power-off rc print to console if it still reboots.
+
 # Active handoff — native shutdown and persistent boot (2026-11-15)
 
 - User narrowed work to native shutdown and power-button boot, selecting
