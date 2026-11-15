@@ -6,10 +6,26 @@
 - Added 0267-guacamole-system-off.patch. New platform halt handler queries
   PSCI support, flushes/stops UFS I/O and invokes SYSTEM_OFF. No phone test.
 - Patch application and Linux clang syntax checks of both changed sources
-  passed using CI 43656713836 headers. Full macOS build pending.
-- Current ADB preflight found no connected device. Current slot and fresh
-  boot backups remain pending. No partition write or slot change performed.
+  passed using CI 43656713836 headers; 17 inherited C++ warnings match the
+  unchanged baseline. Full macOS build 43754879607 succeeded for commit
+  aab3a08b62905ccd30d034c68db1744877a90d66 on power-shutdown-20261115.
+- Read-only TWRP preflight: active slot A, boot_a/boot_b each 100663296
+  bytes. Fresh backups and hashes are in out/power-build/device and copied
+  byte-for-byte to Windows platform-tools/ios16-corey-power/backups.
+  No partition write or slot change performed.
+- Packaged 90 Hz and 60 Hz images under out/power-build/release, copied to
+  Windows platform-tools/ios16-corey-power. tools/verify-power-boot.py
+  checks the kernel segments, shim, Android header checksum, DTB, geometry
+  and boot args; corrupted-shim rejection also passed. ADT differs from
+  the previous full iOS image only in the fresh random seed. Both builds
+  fit boot_a. No userdata rebuild or installed-root changes.
+- 90 Hz SHA-256: 4fd578923484d64ae55b212e758cdf11da6c16e9d3f85a1285c6e07907f1a0cb.
+  60 Hz SHA-256: 89e32e2b5e2b6a972a1f219d122f57d0530cf81b8352056aeda7eb29b341f5b2.
 - docs/BOOT_AND_SHUTDOWN.md describes the native menu test and rollback.
+  Temporary boot/menu/shutdown are NOT TESTED. Next: user temporarily boots
+  the 90 Hz image and checks Settings > General > Shut Down, then confirms
+  boot_a as the persistent installation target. Do not flash without that
+  explicit target confirmation; recheck the active slot immediately before.
 
 # Active handoff — Fresh iOS userdata and rebuilt 90 Hz boot (2026-11-15)
 

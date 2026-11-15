@@ -29,12 +29,17 @@ verification. A short power press must continue to lock/wake the screen.
 
 Patch application checked against the pinned, fully patched XNU source.
 Modified C and C++ translation units passed Linux clang syntax checking
-using the successful CI build's generated headers. C++ inherited macro
-warnings require comparison against the unchanged baseline. This check
-does not substitute for the macOS full kernel build or hardware testing.
+using the successful CI build's generated headers. The 17 C++ header/macro
+warnings match the unchanged baseline; no new warnings were introduced. The full macOS kernel build subsequently passed:
+https://github.com/cfels/ios-guacamole/actions/runs/43754879607
+Source: aab3a08b62905ccd30d034c68db1744877a90d66.
+Hardware shutdown, menu behavior and cold boot remain NOT TESTED.
 
-Expected startup line:
+The startup line reports the actual firmware version, for example:
 SWEET POWER: PSCI version=0x10001 SYSTEM_OFF feature=0
+
+The version above is illustrative, not a phone measurement. Feature=0
+means the firmware advertises SYSTEM_OFF support.
 
 Expected shutdown progress:
 SWEET POWER: final UFS flush before SYSTEM_OFF
@@ -61,3 +66,30 @@ Rollback restores the exact saved image to the same confirmed boot
 partition through fastboot. Keep the stock/TWRP image and the known-good
 90 Hz boot image on the host. A full userdata rebuild is unnecessary for
 this kernel-only change.
+
+Read-only preflight on 2026-11-15: active slot A; boot_a and boot_b are
+100663296 bytes each. Fresh backups and hashes are in
+out/power-build/device/preflight.json. No boot partition or slot was changed.
+
+
+## Delivered test images
+
+Windows directory: C:/Users/Mox/Desktop/platform-tools/ios16-corey-power.
+90 Hz: boot-corey-full-ios-90hz.img.
+60 Hz: boot-corey-full-ios-60hz.img.
+Both are 21590016 bytes and fit the backed-up boot_a partition.
+SHA256SUMS and power-build-manifest.json record the exact inputs and outputs.
+INSTALL.txt contains temporary boot and the proposed boot_a installation
+and rollback commands. Permanent installation is not yet authorized.
+
+WSL packaging:
+```
+python3 tools/build-full-boot.py out/power-build/ci-43754879607/kernel.development.sweet out/power-build/device/boot_a.img out/power-build/release
+cp shim/out/Image out/power-build/release/shim.Image
+python3 tools/verify-power-boot.py out/power-build/ci-43754879607/kernel.development.sweet out/power-build/device/boot_a.img out/power-build/release
+```
+Use a new output directory when rebuilding. The verifier compares every
+embedded kernel segment and the shim, DTB, boot arguments, framebuffer
+geometry and Android header checksum. A deliberately corrupted shim was
+rejected. All non-random ADT properties match the previous full iOS build;
+the missing optional haptics firmware remains an existing limitation.
