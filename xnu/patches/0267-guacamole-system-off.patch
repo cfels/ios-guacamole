@@ -1,0 +1,123 @@
+diff --git a/iokit/Kernel/arm/SweetPlatformExpert.cpp b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+--- a/iokit/Kernel/arm/SweetPlatformExpert.cpp
++++ b/iokit/Kernel/arm/SweetPlatformExpert.cpp
+@@ -9,12 +9,30 @@
+ #include <IOKit/IOPlatformExpert.h>
+ #include <IOKit/IODeviceTreeSupport.h>
+ #include <IOKit/IOLib.h>
++#include <pexpert/pexpert.h>
++
++extern "C" int sweet_ufs_shutdown(void);
++
++static int32_t
++sweet_psci(uint32_t function, uint32_t argument)
++{
++	register uint64_t x0 __asm__("x0") = function;
++	register uint64_t x1 __asm__("x1") = argument;
++	register uint64_t x2 __asm__("x2") = 0;
++	register uint64_t x3 __asm__("x3") = 0;
++	__asm__ volatile("smc #0" : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3) : :
++	    "x4", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "x12", "x13",
++	    "x14", "x15", "x16", "x17", "cc", "memory");
++	return (int32_t)x0;
++}
+ 
+ class SweetPlatformExpert : public IODTPlatformExpert {
+ 	OSDeclareDefaultStructors(SweetPlatformExpert);
++	int32_t systemOffFeature = -1;
+ 
+ public:
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
++	int haltRestart(unsigned int type) APPLE_KEXT_OVERRIDE;
+ 	void processTopLevel(IORegistryEntry *root) APPLE_KEXT_OVERRIDE;
+ 	const char *deleteList(void) APPLE_KEXT_OVERRIDE;
+ 	const char *excludeList(void) APPLE_KEXT_OVERRIDE;
+@@ -29,9 +47,34 @@
+ 	if (!IODTPlatformExpert::start(provider)) {
+ 		return false;
+ 	}
++	int32_t version = sweet_psci(0x84000000, 0);
++	if (version >= 0x10000)
++		systemOffFeature = sweet_psci(0x8400000a, 0x84000008);
++	IOLog("SWEET POWER: PSCI version=%#x SYSTEM_OFF feature=%d\n", version, systemOffFeature);
+ 	registerService();
+ 	IOLog("SWEET: platform expert registered\n");
+ 	return true;
++}
++
++int
++SweetPlatformExpert::haltRestart(unsigned int type)
++{
++	if (type != kPEHaltCPU && type != kPEUPSDelayHaltCPU)
++		return IODTPlatformExpert::haltRestart(type);
++	if (systemOffFeature < 0) {
++		IOLog("SWEET POWER: SYSTEM_OFF unsupported, shutdown failed\n");
++		return -1;
++	}
++	IOLog("SWEET POWER: final UFS flush before SYSTEM_OFF\n");
++	int error = sweet_ufs_shutdown();
++	if (error) {
++		IOLog("SWEET POWER: UFS flush failed=%d, shutdown aborted\n", error);
++		return -1;
++	}
++	__asm__ volatile("dsb sy" ::: "memory");
++	int32_t result = sweet_psci(0x84000008, 0);
++	IOLog("SWEET POWER: SYSTEM_OFF returned=%d, shutdown failed\n", result);
++	return -1;
+ }
+ 
+ const char *
+diff --git a/bsd/dev/sweet_ufs.c b/bsd/dev/sweet_ufs.c
+--- a/bsd/dev/sweet_ufs.c
++++ b/bsd/dev/sweet_ufs.c
+@@ -116,6 +116,7 @@
+ 	int bmajor, cmajor;
+ 	dev_t bdev;
+ 	bool ready;
++	bool stopped;
+ } su;
+ 
+ static LCK_GRP_DECLARE(sweet_ufs_grp, "sweet_ufs");
+@@ -152,6 +153,9 @@
+ static int
+ ufs_scsi(const uint8_t *cdb, unsigned cdb_len, uint32_t len, bool write)
+ {
++	if (su.stopped) {
++		return EIO;
++	}
+ 	struct utrd *utrd = (struct utrd *)(su.dma + DMA_UTRL);
+ 	struct ucd *ucd = (struct ucd *)(su.dma + DMA_UCD);
+ 	uint64_t ucd_pa = su.dma_pa + DMA_UCD, bounce_pa = su.dma_pa + DMA_BOUNCE;
+@@ -301,6 +305,21 @@
+ {
+ 	static const uint8_t cdb[10] = { 0x35 };       /* SYNCHRONIZE CACHE(10), whole LUN */
+ 	return ufs_scsi(cdb, sizeof(cdb), 0, false);
++}
++
++int sweet_ufs_shutdown(void);
++
++int
++sweet_ufs_shutdown(void)
++{
++	lck_mtx_lock(&sweet_ufs_lock);
++	int error = !su.ready ? ENXIO : su.stopped ? 0 : ufs_sync_cache();
++	if (!error) {
++		/* The log writer shares this lock; no I/O may follow the final flush. */
++		su.stopped = true;
++	}
++	lck_mtx_unlock(&sweet_ufs_lock);
++	return error;
+ }
+ 
+ static int
+@@ -846,6 +865,10 @@
+ 		int error = 0;
+ 
+ 		lck_mtx_lock(&sweet_ufs_lock);
++		if (su.stopped) {
++			lck_mtx_unlock(&sweet_ufs_lock);
++			return;
++		}
+ 		while (pos < total && !error) {
+ 			uint32_t off = (uint32_t)(pos % SWEET_LOG_SIZE);
+ 			uint32_t blk = off / UFS_BLOCK;

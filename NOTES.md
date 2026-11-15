@@ -1,3 +1,16 @@
+# Active handoff — native shutdown and persistent boot (2026-11-15)
+
+- User narrowed work to native shutdown and power-button boot, selecting
+  boot-corey-full-ios-90hz.img as the base. Wi-Fi edits remain uncommitted
+  in the working tree and are outside this build.
+- Added 0267-guacamole-system-off.patch. New platform halt handler queries
+  PSCI support, flushes/stops UFS I/O and invokes SYSTEM_OFF. No phone test.
+- Patch application and Linux clang syntax checks of both changed sources
+  passed using CI 43656713836 headers. Full macOS build pending.
+- Current ADB preflight found no connected device. Current slot and fresh
+  boot backups remain pending. No partition write or slot change performed.
+- docs/BOOT_AND_SHUTDOWN.md describes the native menu test and rollback.
+
 # Active handoff — Fresh iOS userdata and rebuilt 90 Hz boot (2026-11-15)
 
 - Delivered the device-specific iOS 16.7.16 (20H392) images to
